@@ -20,6 +20,7 @@ import { Message } from '@alifd/next';
 import { browserHistory } from 'react-router';
 import { isPlainObject } from './nacosutil';
 // import { SUCCESS_RESULT_CODE } from '../constants';
+import { goRegister } from '../globalLib';
 
 const API_GENERAL_ERROR_MESSAGE = 'Request error, please try again later!';
 
@@ -39,7 +40,7 @@ const request = () => {
       if (!params) {
         config.params = {};
       }
-      if (!url.includes('auth/users/login')) {
+      if (!url.includes('auth/users/login') && localStorage.token) {
         let token = {};
         try {
           token = JSON.parse(localStorage.token);
@@ -47,8 +48,12 @@ const request = () => {
           console.log(e);
           goLogin();
         }
-        const { accessToken = '' } = token;
+        const { accessToken = '', username = '' } = token;
         config.params.accessToken = accessToken;
+        // support #3548 and fix #5835
+        if (!url.includes('auth')) {
+          config.params.username = username;
+        }
         config.headers = Object.assign({}, headers, { accessToken });
       }
       if (data && isPlainObject(data) && ['post', 'put'].includes(method)) {
@@ -70,6 +75,19 @@ const request = () => {
       //   Message.error(resultMessage);
       //   return Promise.reject(new Error(resultMessage));
       // }
+      if (response.config && response.config.url === 'v1/console/server/state') {
+        const { auth_admin_request = '' } = response.data;
+        if (auth_admin_request && auth_admin_request === 'true') {
+          goRegister();
+        }
+        if (
+          auth_admin_request &&
+          auth_admin_request === 'false' &&
+          window.location.href.includes('/register')
+        ) {
+          goLogin();
+        }
+      }
       return response.data;
     },
     error => {
@@ -85,7 +103,9 @@ const request = () => {
 
         if (
           [401, 403].includes(status) &&
-          ['unknown user!', 'token invalid!', 'token expired!'].includes(message)
+          ['unknown user!', 'token invalid!', 'token expired!', 'session expired!'].includes(
+            message
+          )
         ) {
           goLogin();
         }

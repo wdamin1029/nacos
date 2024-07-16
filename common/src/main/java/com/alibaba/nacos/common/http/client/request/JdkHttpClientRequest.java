@@ -44,6 +44,8 @@ import java.util.Map;
  */
 public class JdkHttpClientRequest implements HttpClientRequest {
     
+    private static final String CONTENT_LENGTH = "Content-Length";
+    
     private HttpClientConfig httpClientConfig;
     
     public JdkHttpClientRequest(HttpClientConfig httpClientConfig) {
@@ -94,7 +96,7 @@ public class JdkHttpClientRequest implements HttpClientRequest {
         conn.setRequestMethod(httpMethod);
         if (body != null && !"".equals(body)) {
             String contentType = headers.getValue(HttpHeaderConsts.CONTENT_TYPE);
-            String bodyStr = JacksonUtils.toJson(body);
+            String bodyStr = body instanceof String ? (String) body : JacksonUtils.toJson(body);
             if (MediaType.APPLICATION_FORM_URLENCODED.equals(contentType)) {
                 Map<String, String> map = JacksonUtils.toObj(bodyStr, HashMap.class);
                 bodyStr = HttpUtils.encodingParams(map, headers.getCharset());
@@ -102,7 +104,7 @@ public class JdkHttpClientRequest implements HttpClientRequest {
             if (bodyStr != null) {
                 conn.setDoOutput(true);
                 byte[] b = bodyStr.getBytes();
-                conn.setRequestProperty("Content-Length", String.valueOf(b.length));
+                conn.setRequestProperty(CONTENT_LENGTH, String.valueOf(b.length));
                 OutputStream outputStream = conn.getOutputStream();
                 outputStream.write(b, 0, b.length);
                 outputStream.flush();

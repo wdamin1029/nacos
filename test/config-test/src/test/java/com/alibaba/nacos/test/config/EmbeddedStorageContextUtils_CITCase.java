@@ -16,33 +16,34 @@
 
 package com.alibaba.nacos.test.config;
 
-import com.alibaba.nacos.config.server.service.sql.EmbeddedStorageContextUtils;
-import com.alibaba.nacos.config.server.service.sql.ModifyRequest;
+import com.alibaba.nacos.persistence.repository.embedded.EmbeddedStorageContextHolder;
+import com.alibaba.nacos.persistence.repository.embedded.sql.ModifyRequest;
 import com.alibaba.nacos.test.base.ConfigCleanUtils;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 /**
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
  */
-public class EmbeddedStorageContextUtils_CITCase {
+class EmbeddedStorageContextUtils_CITCase {
     
-    @BeforeClass
-    @AfterClass
-    public static void cleanClientCache() throws Exception {
+    @BeforeAll
+    @AfterAll
+    static void cleanClientCache() throws Exception {
         ConfigCleanUtils.cleanClientCache();
         ConfigCleanUtils.changeToNewTestNacosHome(EmbeddedStorageContextUtils_CITCase.class.getSimpleName());
     }
     
     @Test
-    public void test_multi_thread_sql_contexts() throws Exception {
+    void test_multi_thread_sql_contexts() throws Exception {
         CountDownLatch latch = new CountDownLatch(3);
         
         ExecutorService service = Executors.newFixedThreadPool(3);
@@ -50,13 +51,13 @@ public class EmbeddedStorageContextUtils_CITCase {
             final int j = i;
             service.submit(() -> {
                 try {
-                    EmbeddedStorageContextUtils.addSqlContext("test_" + j, j);
-                    EmbeddedStorageContextUtils.addSqlContext("test_" + j * 10, j);
+                    EmbeddedStorageContextHolder.addSqlContext("test_" + j, j);
+                    EmbeddedStorageContextHolder.addSqlContext("test_" + j * 10, j);
                     
-                    List<ModifyRequest> list = EmbeddedStorageContextUtils.getCurrentSqlContext();
+                    List<ModifyRequest> list = EmbeddedStorageContextHolder.getCurrentSqlContext();
                     System.out.println(list);
-                    Assert.assertEquals("test_" + j, list.get(0).getSql());
-                    Assert.assertEquals("test_" + j * 10, list.get(0).getSql());
+                    assertEquals("test_" + j, list.get(0).getSql());
+                    assertEquals("test_" + j * 10, list.get(0).getSql());
                 } finally {
                     latch.countDown();
                 }

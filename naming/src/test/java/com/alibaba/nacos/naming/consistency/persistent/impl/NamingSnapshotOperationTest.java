@@ -16,20 +16,20 @@
 
 package com.alibaba.nacos.naming.consistency.persistent.impl;
 
+import com.alibaba.nacos.consistency.Serializer;
 import com.alibaba.nacos.consistency.snapshot.Reader;
 import com.alibaba.nacos.consistency.snapshot.Writer;
 import com.alibaba.nacos.core.distributed.raft.RaftConfig;
 import com.alibaba.nacos.core.distributed.raft.utils.RaftExecutor;
 import com.alibaba.nacos.core.storage.kv.KvStorage;
 import com.alibaba.nacos.sys.env.EnvUtil;
-import com.alibaba.nacos.sys.utils.DiskUtils;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.file.Paths;
@@ -38,38 +38,44 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-@RunWith(MockitoJUnitRunner.class)
-public class NamingSnapshotOperationTest {
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+
+@ExtendWith(MockitoExtension.class)
+class NamingSnapshotOperationTest {
     
     static {
         RaftExecutor.init(new RaftConfig());
         EnvUtil.setEnvironment(new MockEnvironment());
     }
     
-    @Mock
-    private KvStorage storage;
-    
-    private final String tmpDir = Paths.get(EnvUtil.getNacosTmpDir(), "rocks_test").toString();
-    
     private final String snapshotDir = Paths.get(EnvUtil.getNacosTmpDir(), "rocks_snapshot_test").toString();
     
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     
-    @Before
-    public void init() {
-        DiskUtils.deleteQuietly(Paths.get(EnvUtil.getNacosTmpDir()));
+    @Mock
+    private KvStorage storage;
+    
+    private boolean isSnapshoted = false;
+    
+    @BeforeEach
+    void init() throws Exception {
+        doAnswer(invocationOnMock -> {
+            isSnapshoted = true;
+            return null;
+        }).when(storage).doSnapshot(any(String.class));
     }
     
-    @After
-    public void after() {
+    @AfterEach
+    void after() {
         storage.shutdown();
-        DiskUtils.deleteQuietly(Paths.get(EnvUtil.getNacosTmpDir()));
     }
     
     @Test
-    public void testNamingSnapshot() throws InterruptedException {
+    void testNamingSnapshot() throws InterruptedException {
         AtomicBoolean result = new AtomicBoolean(false);
-        NamingSnapshotOperation operation = new NamingSnapshotOperation(storage, lock);
+        NamingSnapshotOperation operation = new NamingSnapshotOperation(storage, lock, Mockito.mock(Serializer.class));
         final Writer writer = new Writer(snapshotDir);
         final CountDownLatch latch = new CountDownLatch(1);
         
@@ -78,11 +84,12 @@ public class NamingSnapshotOperationTest {
             latch.countDown();
         });
         latch.await(10, TimeUnit.SECONDS);
-        Assert.assertTrue(result.get());
+        assertTrue(isSnapshoted);
+        assertTrue(result.get());
         
         final Reader reader = new Reader(snapshotDir, writer.listFiles());
         boolean res = operation.onSnapshotLoad(reader);
-        Assert.assertTrue(res);
+        assertTrue(res);
     }
     
 }

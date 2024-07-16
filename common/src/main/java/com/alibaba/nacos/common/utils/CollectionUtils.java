@@ -17,11 +17,17 @@
 package com.alibaba.nacos.common.utils;
 
 import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * Copy from {@link org.apache.commons.collections}.
@@ -29,6 +35,9 @@ import java.util.Map;
  * @author <a href="mailto:liaochuntao@live.com">liaochuntao</a>
  */
 public final class CollectionUtils {
+
+    private CollectionUtils() {
+    }
     
     /**
      * Returns the <code>index</code>-th value in <code>object</code>, throwing
@@ -231,18 +240,122 @@ public final class CollectionUtils {
      * Returns the value to which the specified index , or {@code defaultValue} if this collection contains no value for
      * the index.
      *
-     * @param coll         the collection to get a value from
+     * @param obj          the object to get a value from
      * @param index        the index to get
      * @param defaultValue default value
      * @param <T>          General Type
      * @return the value to which the specified index , or {@code defaultValue} if this collection contains no value for
      * the index.
      */
-    public static <T> T getOrDefault(Collection<T> coll, int index, T defaultValue) {
+    public static <T> T getOrDefault(Object obj, int index, T defaultValue) {
         try {
-            return (T) get(coll, index);
+            return (T) get(obj, index);
         } catch (IndexOutOfBoundsException e) {
             return defaultValue;
         }
+    }
+    
+    /**
+     * return an arraylist containing all input parameters.
+     *
+     * @param elements element array
+     * @return arraylist containing all input parameters
+     * @author zzq
+     */
+    public static <T> List<T> list(T... elements) {
+        if (elements == null) {
+            throw new IllegalArgumentException("Expected an array of elements (or empty array) but received a null.");
+        }
+        ArrayList<T> list = new ArrayList<>(elements.length);
+        Collections.addAll(list, elements);
+        return list;
+    }
+    
+    /**
+     * Return a set containing all input parameters.
+     *
+     * @param elements elements element array
+     * @return set containing all input parameters
+     */
+    public static <T> Set<T> set(T... elements) {
+        if (elements == null) {
+            throw new IllegalArgumentException("Expected an array of elements (or empty array) but received a null.");
+        } else {
+            return new LinkedHashSet<>(Arrays.asList(elements));
+        }
+    }
+    
+    /**
+     * return the first element, if the iterator contains multiple elements, will throw {@code
+     * IllegalArgumentException}.
+     *
+     * @throws NoSuchElementException   if the iterator is empty
+     * @throws IllegalArgumentException if the iterator contains multiple elements. The state of the iterator is
+     *                                  unspecified.
+     */
+    public static <T> T getOnlyElement(Iterable<T> iterable) {
+        if (iterable == null) {
+            throw new IllegalArgumentException("iterable cannot be null.");
+        }
+        Iterator<T> iterator = iterable.iterator();
+        T first = iterator.next();
+        if (!iterator.hasNext()) {
+            return first;
+        }
+        throw new IllegalArgumentException(buildExceptionMessage(iterator, first));
+    }
+    
+    /**
+     * check list is equal.
+     *
+     * @param firstList  first list.
+     * @param secondList second list.
+     * @return
+     */
+    public static boolean isListEqual(List<String> firstList, List<String> secondList) {
+        if (firstList == null && secondList == null) {
+            return true;
+        }
+        if (firstList == null || secondList == null) {
+            return false;
+        }
+        
+        if (firstList == secondList) {
+            return true;
+        }
+        
+        if (firstList.size() != secondList.size()) {
+            return false;
+        }
+        
+        boolean flag1 = firstList.containsAll(secondList);
+        boolean flag2 = secondList.containsAll(firstList);
+        return flag1 && flag2;
+    }
+    
+    @SuppressWarnings("PMD.UndefineMagicConstantRule")
+    private static <T> String buildExceptionMessage(Iterator<T> iterator, T first) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("expected one element but was: <");
+        msg.append(first);
+        for (int i = 0; i < 4 && iterator.hasNext(); i++) {
+            msg.append(", ");
+            msg.append(iterator.next());
+        }
+        if (iterator.hasNext()) {
+            msg.append(", ...");
+        }
+        msg.append('>');
+        return msg.toString();
+    }
+    
+    /**
+     * Return {@code true} if the supplied Map is {@code null} or empty. Otherwise, return {@code false}.
+     *
+     * @param map the Map to check
+     * @return whether the given Map is empty
+     */
+    public static boolean isMapEmpty(Map<?, ?> map) {
+        return (map == null || map.isEmpty());
     }
 }

@@ -29,7 +29,15 @@ public class PropertyKeyConst {
     
     public static final String ENDPOINT = "endpoint";
     
+    public static final String ENDPOINT_QUERY_PARAMS = "endpointQueryParams";
+    
     public static final String ENDPOINT_PORT = "endpointPort";
+    
+    public static final String ENDPOINT_CONTEXT_PATH = "endpointContextPath";
+    
+    public static final String ENDPOINT_CLUSTER_NAME = "endpointClusterName";
+    
+    public static final String SERVER_NAME = "serverName";
     
     public static final String NAMESPACE = "namespace";
     
@@ -55,13 +63,21 @@ public class PropertyKeyConst {
     
     public static final String CONFIG_RETRY_TIME = "configRetryTime";
     
+    public static final String CLIENT_WORKER_MAX_THREAD_COUNT = "clientWorkerMaxThreadCount";
+    
+    public static final String CLIENT_WORKER_THREAD_COUNT = "clientWorkerThreadCount";
+    
     public static final String MAX_RETRY = "maxRetry";
     
     public static final String ENABLE_REMOTE_SYNC_CONFIG = "enableRemoteSyncConfig";
     
     public static final String NAMING_LOAD_CACHE_AT_START = "namingLoadCacheAtStart";
     
+    public static final String NAMING_CACHE_REGISTRY_DIR = "namingCacheRegistryDir";
+    
     public static final String NAMING_CLIENT_BEAT_THREAD_COUNT = "namingClientBeatThreadCount";
+    
+    public static final String NAMING_POLLING_MAX_THREAD_COUNT = "namingPollingMaxThreadCount";
     
     public static final String NAMING_POLLING_THREAD_COUNT = "namingPollingThreadCount";
     
@@ -69,7 +85,15 @@ public class PropertyKeyConst {
     
     public static final String NAMING_PUSH_EMPTY_PROTECTION = "namingPushEmptyProtection";
     
-    public static final String PUSH_RECEIVER_UDP_PORT = "push.receiver.udp.port";
+    public static final String NAMING_ASYNC_QUERY_SUBSCRIBE_SERVICE = "namingAsyncQuerySubscribeService";
+    
+    public static final String REDO_DELAY_TIME = "redoDelayTime";
+    
+    public static final String REDO_DELAY_THREAD_COUNT = "redoDelayThreadCount";
+    
+    public static final String SIGNATURE_REGION_ID = "signatureRegionId";
+    
+    public static final String LOG_ALL_PROPERTIES = "logAllProperties";
     
     /**
      * Get the key value of some variable value from the system property.
@@ -77,6 +101,8 @@ public class PropertyKeyConst {
     public static class SystemEnv {
         
         public static final String ALIBABA_ALIWARE_ENDPOINT_PORT = "ALIBABA_ALIWARE_ENDPOINT_PORT";
+        
+        public static final String ALIBABA_ALIWARE_ENDPOINT_CONTEXT_PATH = "ALIBABA_ALIWARE_ENDPOINT_CONTEXT_PATH";
         
         public static final String ALIBABA_ALIWARE_NAMESPACE = "ALIBABA_ALIWARE_NAMESPACE";
         

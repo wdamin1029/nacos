@@ -20,6 +20,7 @@ import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import com.alibaba.nacos.common.notify.NotifyCenter;
 import com.alibaba.nacos.common.utils.ByteUtils;
+import com.alibaba.nacos.common.utils.TypeUtils;
 import com.alibaba.nacos.consistency.DataOperation;
 import com.alibaba.nacos.consistency.SerializeFactory;
 import com.alibaba.nacos.consistency.Serializer;
@@ -34,15 +35,13 @@ import com.alibaba.nacos.naming.consistency.Datum;
 import com.alibaba.nacos.naming.consistency.KeyBuilder;
 import com.alibaba.nacos.naming.consistency.RecordListener;
 import com.alibaba.nacos.naming.consistency.ValueChangeEvent;
-import com.alibaba.nacos.naming.consistency.persistent.ClusterVersionJudgement;
 import com.alibaba.nacos.naming.consistency.persistent.PersistentConsistencyService;
 import com.alibaba.nacos.naming.consistency.persistent.PersistentNotifier;
+import com.alibaba.nacos.naming.constants.Constants;
 import com.alibaba.nacos.naming.misc.Loggers;
 import com.alibaba.nacos.naming.misc.UtilsAndCommons;
 import com.alibaba.nacos.naming.pojo.Record;
-import com.alibaba.nacos.naming.constants.Constants;
 import com.google.protobuf.ByteString;
-import org.apache.commons.lang3.reflect.TypeUtils;
 
 import java.lang.reflect.Type;
 import java.nio.file.Paths;
@@ -106,12 +105,13 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
     
     protected final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     
-    protected final ClusterVersionJudgement versionJudgement;
-    
     protected final PersistentNotifier notifier;
     
-    public BasePersistentServiceProcessor(final ClusterVersionJudgement judgement) throws Exception {
-        this.versionJudgement = judgement;
+    protected final int queueMaxSize = 16384;
+    
+    protected final int priority = 10;
+    
+    public BasePersistentServiceProcessor() throws Exception {
         this.kvStorage = new NamingKvStorage(Paths.get(UtilsAndCommons.DATA_BASE_DIR, "data").toString());
         this.serializer = SerializeFactory.getSerializer("JSON");
         this.notifier = new PersistentNotifier(key -> {
@@ -121,32 +121,24 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
                 return null != datum ? datum.value : null;
             } catch (KvStorageException ex) {
                 throw new NacosRuntimeException(ex.getErrCode(), ex.getErrMsg());
+            } catch (Exception e) {
+                throw new NacosRuntimeException(NacosException.SERVER_ERROR, e.getMessage());
             }
         });
     }
     
     @SuppressWarnings("unchecked")
     public void afterConstruct() {
-        NotifyCenter.registerToPublisher(ValueChangeEvent.class, 16384);
-        listenOldRaftClose();
-    }
-    
-    private void listenOldRaftClose() {
-        this.versionJudgement.registerObserver(isNewVersion -> {
-            if (isNewVersion) {
-                NotifyCenter.registerSubscriber(notifier);
-                startNotify = true;
-            }
-        }, 10);
+        NotifyCenter.registerToPublisher(ValueChangeEvent.class, queueMaxSize);
     }
     
     @Override
     public Response onRequest(ReadRequest request) {
-        final List<byte[]> keys = serializer
-                .deserialize(request.getData().toByteArray(), TypeUtils.parameterize(List.class, byte[].class));
         final Lock lock = readLock;
         lock.lock();
         try {
+            final List<byte[]> keys = serializer
+                    .deserialize(request.getData().toByteArray(), TypeUtils.parameterize(List.class, byte[].class));
             final Map<byte[], byte[]> result = kvStorage.batchGet(keys);
             final BatchReadResponse response = new BatchReadResponse();
             result.forEach(response::append);
@@ -154,6 +146,9 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
                     .build();
         } catch (KvStorageException e) {
             return Response.newBuilder().setSuccess(false).setErrMsg(e.getErrMsg()).build();
+        } catch (Exception e) {
+            Loggers.RAFT.warn("On read request failed, ", e);
+            return Response.newBuilder().setSuccess(false).setErrMsg(e.getMessage()).build();
         } finally {
             lock.unlock();
         }
@@ -162,11 +157,11 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
     @Override
     public Response onApply(WriteRequest request) {
         final byte[] data = request.getData().toByteArray();
-        final BatchWriteRequest bwRequest = serializer.deserialize(data, BatchWriteRequest.class);
-        final Op op = Op.valueOf(request.getOperation());
         final Lock lock = readLock;
         lock.lock();
         try {
+            final BatchWriteRequest bwRequest = serializer.deserialize(data, BatchWriteRequest.class);
+            final Op op = Op.valueOf(request.getOperation());
             switch (op) {
                 case Write:
                     kvStorage.batchPut(bwRequest.getKeys(), bwRequest.getValues());
@@ -181,6 +176,9 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
             return Response.newBuilder().setSuccess(true).build();
         } catch (KvStorageException e) {
             return Response.newBuilder().setSuccess(false).setErrMsg(e.getErrMsg()).build();
+        } catch (Exception e) {
+            Loggers.RAFT.warn("On apply write request failed, ", e);
+            return Response.newBuilder().setSuccess(false).setErrMsg(e.getMessage()).build();
         } finally {
             lock.unlock();
         }
@@ -191,6 +189,10 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
         final List<byte[]> values = request.getValues();
         for (int i = 0; i < keys.size(); i++) {
             final String key = new String(keys.get(i));
+            // Ignore old 1.x version data
+            if (!KeyBuilder.matchSwitchKey(key)) {
+                continue;
+            }
             final Datum datum = serializer.deserialize(values.get(i), getDatumTypeFromKey(key));
             final Record value = null != datum ? datum.value : null;
             final ValueChangeEvent event = ValueChangeEvent.builder().key(key).value(value)
@@ -206,7 +208,7 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
     
     @Override
     public List<SnapshotOperation> loadSnapshotOperate() {
-        return Collections.singletonList(new NamingSnapshotOperation(this.kvStorage, lock));
+        return Collections.singletonList(new NamingSnapshotOperation(this.kvStorage, lock, serializer));
     }
     
     @Override
@@ -223,10 +225,6 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
     protected Class<? extends Record> getClassOfRecordFromKey(String key) {
         if (KeyBuilder.matchSwitchKey(key)) {
             return com.alibaba.nacos.naming.misc.SwitchDomain.class;
-        } else if (KeyBuilder.matchServiceMetaKey(key)) {
-            return com.alibaba.nacos.naming.core.Service.class;
-        } else if (KeyBuilder.matchInstanceListKey(key)) {
-            return com.alibaba.nacos.naming.core.Instances.class;
         }
         return Record.class;
     }
@@ -243,7 +241,7 @@ public abstract class BasePersistentServiceProcessor extends RequestProcessor4CP
     }
     
     /**
-     * This notify should only notify once during startup. See {@link com.alibaba.nacos.naming.core.ServiceManager#init()}
+     * This notify should only notify once during startup.
      */
     private void notifierAllServiceMeta(RecordListener listener) throws NacosException {
         for (byte[] each : kvStorage.allKeys()) {

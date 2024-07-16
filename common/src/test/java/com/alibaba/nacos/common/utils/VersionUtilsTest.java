@@ -16,51 +16,90 @@
 
 package com.alibaba.nacos.common.utils;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-public class VersionUtilsTest {
+import java.io.File;
+import java.net.URL;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class VersionUtilsTest {
     
     @Test
-    public void testVersionCompareLt() {
-        final String versionA = "1.2.0";
-        final String versionB = "1.2.1";
-        Assert.assertTrue(VersionUtils.compareVersion(versionA, versionB) < 0);
+    void testVersionCompareLt() {
+        assertTrue(VersionUtils.compareVersion("1.2.0", "1.2.1") < 0);
+        assertTrue(VersionUtils.compareVersion("0.2.0", "1.2.0") < 0);
+        assertTrue(VersionUtils.compareVersion("1.2.0", "1.3.0") < 0);
     }
     
     @Test
-    public void testVersionCompareGt() {
-        final String versionA = "1.2.2";
-        final String versionB = "1.2.1";
-        Assert.assertTrue(VersionUtils.compareVersion(versionA, versionB) > 0);
+    void testVersionCompareGt() {
+        assertTrue(VersionUtils.compareVersion("1.2.2", "1.2.1") > 0);
+        assertTrue(VersionUtils.compareVersion("2.2.0", "1.2.0") > 0);
+        assertTrue(VersionUtils.compareVersion("1.3.0", "1.2.0") > 0);
     }
     
     @Test
-    public void testVersionCompareEt() {
-        final String versionA = "1.2.1";
-        final String versionB = "1.2.1";
-        Assert.assertEquals(0, VersionUtils.compareVersion(versionA, versionB));
+    void testVersionCompareEt() {
+        assertEquals(0, VersionUtils.compareVersion("1.2.1", "1.2.1"));
     }
     
     @Test
-    public void testVersionCompareLtWithChar() {
-        final String versionA = "1.2.0-beta";
-        final String versionB = "1.2.1";
-        Assert.assertTrue(VersionUtils.compareVersion(versionA, versionB) < 0);
+    void testVersionCompareLtWithChar() {
+        assertTrue(VersionUtils.compareVersion("1.2.0-beta", "1.2.1") < 0);
     }
     
     @Test
-    public void testVersionCompareGtWithChar() {
-        final String versionA = "1.2.2-beta";
-        final String versionB = "1.2.1-beta";
-        Assert.assertTrue(VersionUtils.compareVersion(versionA, versionB) > 0);
+    void testVersionCompareGtWithChar() {
+        assertTrue(VersionUtils.compareVersion("1.2.2-beta", "1.2.1-beta") > 0);
     }
     
     @Test
-    public void testVersionCompareEtWithChar() {
-        final String versionA = "1.2.1";
-        final String versionB = "1.2.1-beta";
-        Assert.assertEquals(0, VersionUtils.compareVersion(versionA, versionB));
+    void testVersionCompareEtWithChar() {
+        assertEquals(0, VersionUtils.compareVersion("1.2.1", "1.2.1-beta"));
     }
     
+    @Test
+    void testVersionCompareResourceNotExist() {
+        URL resource = VersionUtils.class.getClassLoader().getResource("nacos-version.txt");
+        assertNotNull(resource);
+        File originFile = new File(resource.getFile());
+        File tempFile = new File(originFile.getAbsolutePath() + ".rename");
+        assertTrue(originFile.renameTo(tempFile));
+        
+        // not throw any exception
+        VersionUtils.compareVersion("1.2.1", "1.2.1");
+        
+        assertTrue(tempFile.renameTo(originFile));
+    }
+    
+    @Test
+    void testVersionCompareVersionNotValid1() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            VersionUtils.compareVersion("1.2.1.1", "1.2.1.1");
+        });
+    }
+    
+    @Test
+    void testVersionCompareVersionNotValid2() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            VersionUtils.compareVersion("1.2.1", "1.2.1.1");
+        });
+    }
+    
+    @Test
+    void testVersionCompareVersionNotValid3() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            VersionUtils.compareVersion("1.2.1.1", "1.2.1");
+        });
+    }
+    
+    @Test
+    void testFullClientVersion() {
+        assertNotNull(VersionUtils.getFullClientVersion());
+        assertTrue(VersionUtils.getFullClientVersion().startsWith("Nacos-Java-Client:v"));
+    }
 }

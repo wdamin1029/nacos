@@ -16,11 +16,11 @@
 
 package com.alibaba.nacos.console.controller;
 
-import com.alibaba.nacos.config.server.service.repository.PersistService;
-import com.alibaba.nacos.naming.controllers.OperatorController;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.alibaba.nacos.console.paramcheck.ConsoleDefaultHttpParamExtractor;
+import com.alibaba.nacos.core.cluster.health.ModuleHealthCheckerHolder;
+import com.alibaba.nacos.core.cluster.health.ReadinessResult;
+import com.alibaba.nacos.core.paramcheck.ExtractorManager;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,19 +35,8 @@ import javax.servlet.http.HttpServletRequest;
  */
 @RestController("consoleHealth")
 @RequestMapping("/v1/console/health")
+@ExtractorManager.Extractor(httpExtractor = ConsoleDefaultHttpParamExtractor.class)
 public class HealthController {
-    
-    private static final Logger LOGGER = LoggerFactory.getLogger(HealthController.class);
-    
-    private final PersistService persistService;
-    
-    private final OperatorController apiCommands;
-    
-    @Autowired
-    public HealthController(PersistService persistService, OperatorController apiCommands) {
-        this.persistService = persistService;
-        this.apiCommands = apiCommands;
-    }
     
     /**
      * Whether the Nacos is in broken states or not, and cannot recover except by being restarted.
@@ -56,7 +45,7 @@ public class HealthController {
      * Nacos is in broken states.
      */
     @GetMapping("/liveness")
-    public ResponseEntity liveness() {
+    public ResponseEntity<String> liveness() {
         return ResponseEntity.ok().body("OK");
     }
     
@@ -67,43 +56,12 @@ public class HealthController {
      * ready.
      */
     @GetMapping("/readiness")
-    public ResponseEntity readiness(HttpServletRequest request) {
-        boolean isConfigReadiness = isConfigReadiness();
-        boolean isNamingReadiness = isNamingReadiness(request);
-        
-        if (isConfigReadiness && isNamingReadiness) {
+    public ResponseEntity<String> readiness(HttpServletRequest request) {
+        ReadinessResult result = ModuleHealthCheckerHolder.getInstance().checkReadiness();
+        if (result.isSuccess()) {
             return ResponseEntity.ok().body("OK");
         }
-        
-        if (!isConfigReadiness && !isNamingReadiness) {
-            return ResponseEntity.status(500).body("Config and Naming are not in readiness");
-        }
-        
-        if (!isConfigReadiness) {
-            return ResponseEntity.status(500).body("Config is not in readiness");
-        }
-        
-        return ResponseEntity.status(500).body("Naming is not in readiness");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result.getResultMessage());
     }
     
-    private boolean isConfigReadiness() {
-        // check db
-        try {
-            persistService.configInfoCount("");
-            return true;
-        } catch (Exception e) {
-            LOGGER.error("Config health check fail.", e);
-        }
-        return false;
-    }
-    
-    private boolean isNamingReadiness(HttpServletRequest request) {
-        try {
-            apiCommands.metrics(request);
-            return true;
-        } catch (Exception e) {
-            LOGGER.error("Naming health check fail.", e);
-        }
-        return false;
-    }
 }

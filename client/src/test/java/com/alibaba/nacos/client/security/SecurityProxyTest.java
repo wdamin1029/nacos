@@ -16,27 +16,88 @@
 
 package com.alibaba.nacos.client.security;
 
-import com.alibaba.nacos.api.common.Constants;
-import com.alibaba.nacos.common.utils.JacksonUtils;
-import com.fasterxml.jackson.databind.JsonNode;
-import org.junit.Test;
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.client.auth.impl.NacosAuthLoginConstant;
+import com.alibaba.nacos.common.http.HttpRestResult;
+import com.alibaba.nacos.common.http.client.NacosRestTemplate;
+import com.alibaba.nacos.common.http.param.Header;
+import com.alibaba.nacos.plugin.auth.api.RequestResource;
+import com.alibaba.nacos.plugin.auth.spi.client.ClientAuthPluginManager;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
-import static org.junit.Assert.assertEquals;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
-public class SecurityProxyTest {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+// todo  remove strictness lenient
+@MockitoSettings(strictness = Strictness.LENIENT)
+class SecurityProxyTest {
     
-    /**
-     * Just test for replace fastjson with jackson.
-     */
+    private SecurityProxy securityProxy;
+    
+    @Mock
+    private NacosRestTemplate nacosRestTemplate;
+    
+    @BeforeEach
+    void setUp() throws Exception {
+        //given
+        HttpRestResult<Object> result = new HttpRestResult<>();
+        result.setData("{\"accessToken\":\"ttttttttttttttttt\",\"tokenTtl\":1000}");
+        result.setCode(200);
+        when(nacosRestTemplate.postForm(any(), (Header) any(), any(), any(), any())).thenReturn(result);
+        
+        List<String> serverList = new ArrayList<>();
+        serverList.add("localhost");
+        securityProxy = new SecurityProxy(serverList, nacosRestTemplate);
+    }
+    
     @Test
-    public void testLogin() {
-        String example = "{\"accessToken\":\"ttttttttttttttttt\",\"tokenTtl\":1000}";
-        JsonNode obj = JacksonUtils.toObj(example);
-        if (obj.has(Constants.ACCESS_TOKEN)) {
-            if (obj.has(Constants.ACCESS_TOKEN)) {
-                assertEquals("ttttttttttttttttt", obj.get(Constants.ACCESS_TOKEN).asText());
-                assertEquals(1000, obj.get(Constants.TOKEN_TTL).asInt());
-            }
-        }
+    void testLoginClientAuthService() throws Exception {
+        Properties properties = new Properties();
+        properties.setProperty(PropertyKeyConst.USERNAME, "aaa");
+        properties.setProperty(PropertyKeyConst.PASSWORD, "123456");
+        securityProxy.login(properties);
+        verify(nacosRestTemplate).postForm(any(), (Header) any(), any(), any(), any());
+    }
+    
+    @Test
+    void testGetIdentityContext() {
+        Properties properties = new Properties();
+        properties.setProperty(PropertyKeyConst.USERNAME, "aaa");
+        properties.setProperty(PropertyKeyConst.PASSWORD, "123456");
+        securityProxy.login(properties);
+        //when
+        Map<String, String> keyMap = securityProxy.getIdentityContext(null);
+        //then
+        assertEquals("ttttttttttttttttt", keyMap.get(NacosAuthLoginConstant.ACCESSTOKEN));
+    }
+    
+    @Test
+    void testLoginWithoutAnyPlugin() throws NoSuchFieldException, IllegalAccessException {
+        Field clientAuthPluginManagerField = SecurityProxy.class.getDeclaredField("clientAuthPluginManager");
+        clientAuthPluginManagerField.setAccessible(true);
+        ClientAuthPluginManager clientAuthPluginManager = mock(ClientAuthPluginManager.class);
+        clientAuthPluginManagerField.set(securityProxy, clientAuthPluginManager);
+        when(clientAuthPluginManager.getAuthServiceSpiImplSet()).thenReturn(Collections.emptySet());
+        securityProxy.login(new Properties());
+        Map<String, String> header = securityProxy.getIdentityContext(new RequestResource());
+        assertTrue(header.isEmpty());
     }
 }

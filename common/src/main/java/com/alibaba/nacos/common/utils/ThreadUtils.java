@@ -18,6 +18,7 @@ package com.alibaba.nacos.common.utils;
 
 import org.slf4j.Logger;
 
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,18 +30,10 @@ import java.util.concurrent.TimeUnit;
  */
 public final class ThreadUtils {
     
-    /**
-     * Wait.
-     *
-     * @param object load object
-     */
-    public static void objectWait(Object object) {
-        try {
-            object.wait();
-        } catch (InterruptedException ignore) {
-            Thread.interrupted();
-        }
+    private ThreadUtils() {
     }
+    
+    private static final int THREAD_MULTIPLER = 2;
     
     /**
      * Sleep.
@@ -104,7 +97,7 @@ public final class ThreadUtils {
      * @return thread count
      */
     public static int getSuitableThreadCount(int threadMultiple) {
-        final int coreCount = Runtime.getRuntime().availableProcessors();
+        final int coreCount = PropertyUtils.getProcessorsCount();
         int workerCount = 1;
         while (workerCount < coreCount * threadMultiple) {
             workerCount <<= 1;
@@ -136,7 +129,7 @@ public final class ThreadUtils {
                 Thread.interrupted();
             } catch (Throwable ex) {
                 if (logger != null) {
-                    logger.error("ThreadPoolManager shutdown executor has error : {}", ex);
+                    logger.error("ThreadPoolManager shutdown executor has error : ", ex);
                 }
             }
         }
@@ -146,7 +139,5 @@ public final class ThreadUtils {
     public static void addShutdownHook(Runnable runnable) {
         Runtime.getRuntime().addShutdownHook(new Thread(runnable));
     }
-    
-    private static final int THREAD_MULTIPLER = 2;
     
 }

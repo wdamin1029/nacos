@@ -21,7 +21,7 @@ import com.alibaba.nacos.common.http.HttpUtils;
 import com.alibaba.nacos.common.model.RestResult;
 import com.alibaba.nacos.common.model.RestResultUtils;
 import com.alibaba.nacos.sys.utils.DiskUtils;
-import org.apache.commons.lang3.StringUtils;
+import com.alibaba.nacos.common.utils.StringUtils;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -36,12 +36,29 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import static com.alibaba.nacos.common.constant.HttpHeaderConsts.ACCEPT_ENCODING;
+import static com.alibaba.nacos.common.http.param.MediaType.APPLICATION_JSON;
+
 /**
  * web utils.
  *
  * @author nkorange
  */
 public class WebUtils {
+    
+    private static final String ENCODING_KEY = "encoding";
+    
+    private static final String COMMA = ",";
+    
+    private static final String SEMI = ";";
+    
+    private static final String TMP_SUFFIX = ".tmp";
+    
+    private static final String X_REAL_IP = "X-Real-IP";
+    
+    private static final String X_FORWARDED_FOR = "X-Forwarded-For";
+    
+    private static final String X_FORWARDED_FOR_SPLIT_SYMBOL = ",";
     
     /**
      * get target value from parameterMap, if not found will throw {@link IllegalArgumentException}.
@@ -55,7 +72,7 @@ public class WebUtils {
         if (StringUtils.isEmpty(value)) {
             throw new IllegalArgumentException("Param '" + key + "' is required.");
         }
-        String encoding = req.getParameter("encoding");
+        String encoding = req.getParameter(ENCODING_KEY);
         return resolveValue(value, encoding);
     }
     
@@ -68,14 +85,11 @@ public class WebUtils {
      * @return value
      */
     public static String optional(final HttpServletRequest req, final String key, final String defaultValue) {
-        if (!req.getParameterMap().containsKey(key) || req.getParameterMap().get(key)[0] == null) {
-            return defaultValue;
-        }
         String value = req.getParameter(key);
         if (StringUtils.isBlank(value)) {
             return defaultValue;
         }
-        String encoding = req.getParameter("encoding");
+        String encoding = req.getParameter(ENCODING_KEY);
         return resolveValue(value, encoding);
     }
     
@@ -131,9 +145,9 @@ public class WebUtils {
      * @return accept encode
      */
     public static String getAcceptEncoding(HttpServletRequest req) {
-        String encode = StringUtils.defaultIfEmpty(req.getHeader("Accept-Charset"), StandardCharsets.UTF_8.name());
-        encode = encode.contains(",") ? encode.substring(0, encode.indexOf(",")) : encode;
-        return encode.contains(";") ? encode.substring(0, encode.indexOf(";")) : encode;
+        String encode = StringUtils.defaultIfEmpty(req.getHeader(ACCEPT_ENCODING), StandardCharsets.UTF_8.name());
+        encode = encode.contains(COMMA) ? encode.substring(0, encode.indexOf(COMMA)) : encode;
+        return encode.contains(SEMI) ? encode.substring(0, encode.indexOf(SEMI)) : encode;
     }
     
     /**
@@ -162,7 +176,7 @@ public class WebUtils {
      */
     public static void response(HttpServletResponse response, String body, int code) throws IOException {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.setContentType("application/json;charset=UTF-8");
+        response.setContentType(APPLICATION_JSON);
         response.getWriter().write(body);
         response.setStatus(code);
     }
@@ -183,7 +197,7 @@ public class WebUtils {
         }
         File tmpFile = null;
         try {
-            tmpFile = DiskUtils.createTmpFile(multipartFile.getName(), ".tmp");
+            tmpFile = DiskUtils.createTmpFile(multipartFile.getName(), TMP_SUFFIX);
             multipartFile.transferTo(tmpFile);
             consumer.accept(tmpFile);
         } catch (Throwable ex) {
@@ -239,5 +253,23 @@ public class WebUtils {
             success.run();
             deferredResult.setResult(t);
         });
+    }
+    
+    /**
+     * get real client ip
+     *
+     * <p>first use X-Forwarded-For header    https://zh.wikipedia.org/wiki/X-Forwarded-For next nginx X-Real-IP last
+     * {@link HttpServletRequest#getRemoteAddr()}
+     *
+     * @param request {@link HttpServletRequest}
+     * @return remote ip address.
+     */
+    public static String getRemoteIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader(X_FORWARDED_FOR);
+        if (!StringUtils.isBlank(xForwardedFor)) {
+            return xForwardedFor.split(X_FORWARDED_FOR_SPLIT_SYMBOL)[0].trim();
+        }
+        String nginxHeader = request.getHeader(X_REAL_IP);
+        return StringUtils.isBlank(nginxHeader) ? request.getRemoteAddr() : nginxHeader;
     }
 }

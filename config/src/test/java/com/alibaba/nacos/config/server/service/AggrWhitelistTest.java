@@ -16,31 +16,18 @@
 
 package com.alibaba.nacos.config.server.service;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-import org.springframework.test.context.web.WebAppConfiguration;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@RunWith(SpringJUnit4ClassRunner.class)
-@WebAppConfiguration
-public class AggrWhitelistTest {
-    
-    AggrWhitelist service;
-    
-    @Before
-    public void before() throws Exception {
-        service = new AggrWhitelist();
-    }
+class AggrWhitelistTest {
     
     @Test
-    public void testIsAggrDataId() {
+    void testIsAggrDataId() {
         List<String> list = new ArrayList<String>();
         list.add("com.taobao.jiuren.*");
         list.add("NS_NACOS_SUBSCRIPTION_TOPIC_*");

@@ -17,7 +17,7 @@
 package com.alibaba.nacos.config.server.model.event;
 
 import com.alibaba.nacos.common.notify.Event;
-import org.apache.commons.lang3.StringUtils;
+import com.alibaba.nacos.common.utils.StringUtils;
 
 /**
  * ConfigDataChangeEvent.
@@ -27,6 +27,8 @@ import org.apache.commons.lang3.StringUtils;
 public class ConfigDataChangeEvent extends Event {
     
     public final boolean isBeta;
+    
+    public final boolean isBatch;
     
     public final String dataId;
     
@@ -51,6 +53,7 @@ public class ConfigDataChangeEvent extends Event {
         this.group = group;
         this.tenant = tenant;
         this.tag = null;
+        this.isBatch = false;
         this.lastModifiedTs = gmtModified;
     }
     
@@ -68,6 +71,20 @@ public class ConfigDataChangeEvent extends Event {
         this.group = group;
         this.tenant = tenant;
         this.tag = tag;
+        this.isBatch = false;
+        this.lastModifiedTs = gmtModified;
+    }
+    
+    public ConfigDataChangeEvent(String dataId, String group, String tenant, boolean isBatch, long gmtModified) {
+        if (null == dataId || null == group) {
+            throw new IllegalArgumentException();
+        }
+        this.isBeta = false;
+        this.dataId = dataId;
+        this.group = group;
+        this.tenant = tenant;
+        this.tag = null;
+        this.isBatch = isBatch;
         this.lastModifiedTs = gmtModified;
     }
     

@@ -16,65 +16,179 @@
 
 package com.alibaba.nacos.naming.controllers;
 
-import com.alibaba.nacos.api.common.Constants;
+import com.alibaba.nacos.api.exception.NacosException;
+import com.alibaba.nacos.api.naming.CommonParams;
+import com.alibaba.nacos.common.notify.Event;
+import com.alibaba.nacos.common.notify.NotifyCenter;
+import com.alibaba.nacos.common.notify.listener.SmartSubscriber;
+import com.alibaba.nacos.common.trace.event.naming.UpdateServiceTraceEvent;
 import com.alibaba.nacos.naming.BaseTest;
-import com.alibaba.nacos.naming.core.Service;
-import com.alibaba.nacos.naming.core.ServiceOperatorV1Impl;
-import com.alibaba.nacos.naming.misc.UtilsAndCommons;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.alibaba.nacos.naming.core.ServiceOperatorV2Impl;
+import com.alibaba.nacos.naming.core.SubscribeManager;
+import com.alibaba.nacos.naming.pojo.Subscriber;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockServletContext;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-import org.springframework.test.context.web.WebAppConfiguration;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
-@RunWith(SpringJUnit4ClassRunner.class)
-@ContextConfiguration(classes = MockServletContext.class)
-@WebAppConfiguration
-public class ServiceControllerTest extends BaseTest {
+@ExtendWith(MockitoExtension.class)
+class ServiceControllerTest extends BaseTest {
     
     @InjectMocks
     private ServiceController serviceController;
     
-    @InjectMocks
-    private ServiceOperatorV1Impl serviceOperatorV1;
+    @Mock
+    private ServiceOperatorV2Impl serviceOperatorV2;
     
-    private MockMvc mockmvc;
+    @Mock
+    private SubscribeManager subscribeManager;
     
-    @Before
+    private SmartSubscriber subscriber;
+    
+    private volatile Class<? extends Event> eventReceivedClass;
+    
+    @BeforeEach
     public void before() {
         super.before();
-        ReflectionTestUtils.setField(serviceController, "serviceOperatorV1", serviceOperatorV1);
-        mockmvc = MockMvcBuilders.standaloneSetup(serviceController).build();
+        subscriber = new SmartSubscriber() {
+            @Override
+            public List<Class<? extends Event>> subscribeTypes() {
+                List<Class<? extends Event>> result = new LinkedList<>();
+                result.add(UpdateServiceTraceEvent.class);
+                return result;
+            }
+            
+            @Override
+            public void onEvent(Event event) {
+                eventReceivedClass = event.getClass();
+            }
+        };
+        NotifyCenter.registerSubscriber(subscriber);
+    }
+    
+    @AfterEach
+    void tearDown() throws Exception {
+        NotifyCenter.deregisterSubscriber(subscriber);
+        NotifyCenter.deregisterPublisher(UpdateServiceTraceEvent.class);
+        eventReceivedClass = null;
     }
     
     @Test
-    public void testList() throws Exception {
-        Map<String, Service> serviceNameList = new HashMap<>();
-        for (int i = 0; i < 3; i++) {
-            serviceNameList.put("DEFAULT_GROUP@@providers:com.alibaba.nacos.controller.test:" + i, new Service());
+    void testList() throws Exception {
+        
+        Mockito.when(serviceOperatorV2.listService(Mockito.anyString(), Mockito.anyString(), Mockito.anyString()))
+                .thenReturn(Collections.singletonList("DEFAULT_GROUP@@providers:com.alibaba.nacos.controller.test:1"));
+        
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addParameter("pageNo", "1");
+        servletRequest.addParameter("pageSize", "10");
+        
+        ObjectNode objectNode = serviceController.list(servletRequest);
+        assertEquals(1, objectNode.get("count").asInt());
+    }
+    
+    @Test
+    void testCreate() {
+        try {
+            String res = serviceController.create(TEST_NAMESPACE, TEST_SERVICE_NAME, 0, "", "");
+            assertEquals("ok", res);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+    }
+    
+    @Test
+    void testRemove() {
+        try {
+            String res = serviceController.remove(TEST_NAMESPACE, TEST_SERVICE_NAME);
+            assertEquals("ok", res);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+    }
+    
+    @Test
+    void testDetail() {
+        try {
+            ObjectNode result = Mockito.mock(ObjectNode.class);
+            Mockito.when(serviceOperatorV2.queryService(Mockito.anyString(), Mockito.anyString())).thenReturn(result);
+            
+            ObjectNode objectNode = serviceController.detail(TEST_NAMESPACE, TEST_SERVICE_NAME);
+            assertEquals(result, objectNode);
+        } catch (NacosException e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+    }
+    
+    @Test
+    void testUpdate() throws Exception {
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addParameter(CommonParams.SERVICE_NAME, TEST_SERVICE_NAME);
+        servletRequest.addParameter("protectThreshold", "0.01");
+        try {
+            String res = serviceController.update(servletRequest);
+            assertEquals("ok", res);
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+        TimeUnit.SECONDS.sleep(1);
+        assertEquals(UpdateServiceTraceEvent.class, eventReceivedClass);
+    }
+    
+    @Test
+    void testSearchService() {
+        try {
+            Mockito.when(serviceOperatorV2.searchServiceName(Mockito.anyString(), Mockito.anyString()))
+                    .thenReturn(Collections.singletonList("result"));
+            
+            ObjectNode objectNode = serviceController.searchService(TEST_NAMESPACE, "");
+            assertEquals(1, objectNode.get("count").asInt());
+        } catch (NacosException e) {
+            e.printStackTrace();
+            fail(e.getMessage());
         }
         
-        Mockito.when(serviceManager.chooseServiceMap(Constants.DEFAULT_NAMESPACE_ID)).thenReturn(serviceNameList);
+        try {
+            Mockito.when(serviceOperatorV2.searchServiceName(Mockito.anyString(), Mockito.anyString()))
+                    .thenReturn(Arrays.asList("re1", "re2"));
+            Mockito.when(serviceOperatorV2.listAllNamespace()).thenReturn(Arrays.asList("re1", "re2"));
+            
+            ObjectNode objectNode = serviceController.searchService(null, "");
+            assertEquals(4, objectNode.get("count").asInt());
+        } catch (NacosException e) {
+            e.printStackTrace();
+            fail(e.getMessage());
+        }
+    }
+    
+    @Test
+    void testSubscribers() {
+        Mockito.when(subscribeManager.getSubscribers(Mockito.anyString(), Mockito.anyString(), Mockito.anyBoolean()))
+                .thenReturn(Collections.singletonList(Mockito.mock(Subscriber.class)));
         
-        mockmvc.perform(MockMvcRequestBuilders.get(UtilsAndCommons.NACOS_NAMING_CONTEXT + "/service" + "/list")
-                .param("pageNo", "1").param("pageSize", "10").accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk()).andExpect(MockMvcResultMatchers.jsonPath("$.doms").isArray())
-                .andExpect(MockMvcResultMatchers.jsonPath("$.doms").isNotEmpty())
-                .andExpect(MockMvcResultMatchers.jsonPath("$.count").value(serviceNameList.size()));
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addParameter(CommonParams.SERVICE_NAME, TEST_SERVICE_NAME);
+        
+        ObjectNode objectNode = serviceController.subscribers(servletRequest);
+        assertEquals(1, objectNode.get("count").asInt());
     }
 }

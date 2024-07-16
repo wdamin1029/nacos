@@ -28,6 +28,8 @@ import com.alibaba.nacos.common.utils.ExceptionUtil;
 import org.slf4j.Logger;
 
 import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
+import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTPS_PREFIX;
+import static com.alibaba.nacos.common.constant.RequestUrlConstants.HTTP_PREFIX;
 
 /**
  * http Manager.
@@ -57,10 +59,7 @@ public class NamingHttpClientManager implements Closeable {
     }
     
     public String getPrefix() {
-        if (ENABLE_HTTPS) {
-            return "https://";
-        }
-        return "http://";
+        return ENABLE_HTTPS ? HTTPS_PREFIX : HTTP_PREFIX;
     }
     
     public NacosRestTemplate getNacosRestTemplate() {
@@ -71,7 +70,7 @@ public class NamingHttpClientManager implements Closeable {
     public void shutdown() throws NacosException {
         NAMING_LOGGER.warn("[NamingHttpClientManager] Start destroying NacosRestTemplate");
         try {
-            HttpClientBeanHolder.shutdownNacostSyncRest(HTTP_CLIENT_FACTORY.getClass().getName());
+            HttpClientBeanHolder.shutdownNacosSyncRest(HTTP_CLIENT_FACTORY.getClass().getName());
         } catch (Exception ex) {
             NAMING_LOGGER.error("[NamingHttpClientManager] An exception occurred when the HTTP client was closed : {}",
                     ExceptionUtil.getStackTrace(ex));

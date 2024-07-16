@@ -22,14 +22,16 @@ import com.alibaba.nacos.config.server.constant.Constants;
 import com.alibaba.nacos.common.task.NacosTaskProcessor;
 import com.alibaba.nacos.config.server.model.ConfigInfo;
 import com.alibaba.nacos.config.server.model.ConfigInfoAggr;
-import com.alibaba.nacos.config.server.model.Page;
+import com.alibaba.nacos.persistence.model.Page;
 import com.alibaba.nacos.config.server.model.event.ConfigDataChangeEvent;
-import com.alibaba.nacos.config.server.service.repository.PersistService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoAggrPersistService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoPersistService;
+import com.alibaba.nacos.config.server.service.repository.ConfigInfoTagPersistService;
 import com.alibaba.nacos.config.server.service.trace.ConfigTraceService;
 import com.alibaba.nacos.config.server.utils.ContentUtils;
 import com.alibaba.nacos.config.server.utils.TimeUtils;
 import com.alibaba.nacos.sys.utils.InetUtils;
-import org.apache.commons.lang3.StringUtils;
+import com.alibaba.nacos.common.utils.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,10 +46,24 @@ import java.util.List;
  */
 public class MergeTaskProcessor implements NacosTaskProcessor {
     
+    private static final Logger LOGGER = LoggerFactory.getLogger(MergeTaskProcessor.class);
+    
     private static final int PAGE_SIZE = 10000;
     
-    MergeTaskProcessor(PersistService persistService, MergeDatumService mergeService) {
-        this.persistService = persistService;
+    private ConfigInfoPersistService configInfoPersistService;
+    
+    private ConfigInfoAggrPersistService configInfoAggrPersistService;
+    
+    private ConfigInfoTagPersistService configInfoTagPersistService;
+    
+    private MergeDatumService mergeService;
+    
+    MergeTaskProcessor(ConfigInfoPersistService configInfoPersistService,
+            ConfigInfoAggrPersistService configInfoAggrPersistService,
+            ConfigInfoTagPersistService configInfoTagPersistService, MergeDatumService mergeService) {
+        this.configInfoPersistService = configInfoPersistService;
+        this.configInfoAggrPersistService = configInfoAggrPersistService;
+        this.configInfoTagPersistService = configInfoTagPersistService;
         this.mergeService = mergeService;
     }
     
@@ -60,12 +76,12 @@ public class MergeTaskProcessor implements NacosTaskProcessor {
         final String tag = mergeTask.tag;
         final String clientIp = mergeTask.getClientIp();
         try {
-            List<ConfigInfoAggr> datumList = new ArrayList<ConfigInfoAggr>();
-            int rowCount = persistService.aggrConfigInfoCount(dataId, group, tenant);
+            List<ConfigInfoAggr> datumList = new ArrayList<>();
+            int rowCount = configInfoAggrPersistService.aggrConfigInfoCount(dataId, group, tenant);
             int pageCount = (int) Math.ceil(rowCount * 1.0 / PAGE_SIZE);
             for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
-                Page<ConfigInfoAggr> page = persistService
-                        .findConfigInfoAggrByPage(dataId, group, tenant, pageNo, PAGE_SIZE);
+                Page<ConfigInfoAggr> page = configInfoAggrPersistService.findConfigInfoAggrByPage(dataId, group, tenant,
+                        pageNo, PAGE_SIZE);
                 if (page != null) {
                     datumList.addAll(page.getPageItems());
                     LOGGER.info("[merge-query] {}, {}, size/total={}/{}", dataId, group, datumList.size(), rowCount);
@@ -77,29 +93,34 @@ public class MergeTaskProcessor implements NacosTaskProcessor {
                 // merge
                 ConfigInfo cf = merge(dataId, group, tenant, datumList);
                 
-                persistService.insertOrUpdate(null, null, cf, time, null);
+                configInfoPersistService.insertOrUpdate(null, null, cf, null);
                 
                 LOGGER.info("[merge-ok] {}, {}, size={}, length={}, md5={}, content={}", dataId, group,
                         datumList.size(), cf.getContent().length(), cf.getMd5(),
                         ContentUtils.truncateContent(cf.getContent()));
                 
-                ConfigTraceService
-                        .logPersistenceEvent(dataId, group, tenant, null, time.getTime(), InetUtils.getSelfIP(),
-                                ConfigTraceService.PERSISTENCE_EVENT_MERGE, cf.getContent());
+                ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(),
+                        InetUtils.getSelfIP(), ConfigTraceService.PERSISTENCE_EVENT,
+                        ConfigTraceService.PERSISTENCE_TYPE_MERGE, cf.getContent());
             } else {
+                String eventType;
+                
                 // remove
                 if (StringUtils.isBlank(tag)) {
-                    persistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
+                    eventType = ConfigTraceService.PERSISTENCE_EVENT;
+                    
+                    configInfoPersistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
                 } else {
-                    persistService.removeConfigInfoTag(dataId, group, tenant, tag, clientIp, null);
+                    eventType = ConfigTraceService.PERSISTENCE_EVENT_TAG + "-" + tag;
+                    
+                    configInfoTagPersistService.removeConfigInfoTag(dataId, group, tenant, tag, clientIp, null);
                 }
                 
                 LOGGER.warn(
                         "[merge-delete] delete config info because no datum. dataId=" + dataId + ", groupId=" + group);
                 
-                ConfigTraceService
-                        .logPersistenceEvent(dataId, group, tenant, null, time.getTime(), InetUtils.getSelfIP(),
-                                ConfigTraceService.PERSISTENCE_EVENT_REMOVE, null);
+                ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(),
+                        InetUtils.getSelfIP(), eventType, ConfigTraceService.PERSISTENCE_TYPE_REMOVE, null);
             }
             NotifyCenter.publishEvent(new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
             
@@ -133,10 +154,4 @@ public class MergeTaskProcessor implements NacosTaskProcessor {
         String content = sb.substring(0, sb.lastIndexOf(Constants.NACOS_LINE_SEPARATOR));
         return new ConfigInfo(dataId, group, tenant, appName, content);
     }
-    
-    private static final Logger LOGGER = LoggerFactory.getLogger(MergeTaskProcessor.class);
-    
-    private PersistService persistService;
-    
-    private MergeDatumService mergeService;
 }
